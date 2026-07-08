@@ -1,4 +1,4 @@
-import Testing
+import XCTest
 import Foundation
 @testable import IPData
 
@@ -7,20 +7,23 @@ private func makeClient(apiKey: String? = nil) -> IPDataClient {
                  session: MockURLProtocol.makeSession())
 }
 
-/// `.serialized` because every test configures the same
-/// `MockURLProtocol.requestHandler` global; running them concurrently (the
-/// Swift Testing default) would race on that shared state.
-@Suite(.serialized)
-struct IPDataClientTests {
-    @Test func lookupParsesResponse() async throws {
+final class IPDataClientTests: XCTestCase {
+
+    override func tearDown() {
+        MockURLProtocol.requestHandler = nil
+        super.tearDown()
+    }
+
+    func testLookupParsesResponse() async throws {
         let json = """
         {"ip":"8.8.8.8","success":true,"type":"IPv4",
          "country":"United States","country_code":"US","asn":15169,
          "security":{"tor":false,"proxy":false}}
         """.data(using: .utf8)!
 
+        var capturedPath: String?
         MockURLProtocol.requestHandler = { request in
-            #expect(request.url?.path == "/json/8.8.8.8")
+            capturedPath = request.url?.path
             let response = HTTPURLResponse(
                 url: request.url!, statusCode: 200,
                 httpVersion: nil, headerFields: ["Content-Type": "application/json"])!
@@ -28,12 +31,13 @@ struct IPDataClientTests {
         }
 
         let info = try await makeClient().lookup("8.8.8.8")
-        #expect(info.countryCode == "US")
-        #expect(info.asn == 15169)
-        #expect(info.security != nil)
+        XCTAssertEqual(capturedPath, "/json/8.8.8.8")
+        XCTAssertEqual(info.countryCode, "US")
+        XCTAssertEqual(info.asn, 15169)
+        XCTAssertNotNil(info.security)
     }
 
-    @Test func errorResponseThrowsIPDataError() async {
+    func testErrorResponseThrowsIPDataError() async {
         let body = #"{"error":"batch lookup requires a paid tier API key"}"#.data(using: .utf8)!
         MockURLProtocol.requestHandler = { request in
             let response = HTTPURLResponse(
@@ -44,19 +48,20 @@ struct IPDataClientTests {
 
         do {
             _ = try await makeClient().batch(["8.8.8.8"])
-            Issue.record("expected IPDataError to be thrown")
+            XCTFail("expected IPDataError to be thrown")
         } catch let apiError as IPDataError {
-            #expect(apiError.status == 403)
-            #expect(!apiError.message.isEmpty)
+            XCTAssertEqual(apiError.status, 403)
+            XCTAssertFalse(apiError.message.isEmpty)
         } catch {
-            Issue.record("unexpected error type: \(error)")
+            XCTFail("unexpected error type: \(error)")
         }
     }
 
-    @Test func apiKeySendsHeaderAndDefaultsToProHost() async throws {
+    func testAPIKeySendsHeaderAndDefaultsToProHost() async throws {
         let json = #"{"ip":"1.1.1.1","success":true,"type":"IPv4"}"#.data(using: .utf8)!
+        var sentKey: String?
         MockURLProtocol.requestHandler = { request in
-            #expect(request.value(forHTTPHeaderField: "X-Api-Key") == "secret")
+            sentKey = request.value(forHTTPHeaderField: "X-Api-Key")
             let response = HTTPURLResponse(
                 url: request.url!, statusCode: 200,
                 httpVersion: nil, headerFields: nil)!
@@ -66,27 +71,31 @@ struct IPDataClientTests {
         // Default base URL should switch to pro tier when apiKey is set.
         let client = IPDataClient(apiKey: "secret", session: MockURLProtocol.makeSession())
         let info = try await client.lookup("1.1.1.1")
-        #expect(info.ip == "1.1.1.1")
+        XCTAssertEqual(sentKey, "secret")
+        XCTAssertEqual(info.ip, "1.1.1.1")
     }
 
-    @Test func noAPIKeyOmitsHeader() async throws {
+    func testNoAPIKeyOmitsHeader() async throws {
         let json = #"{"ip":"1.1.1.1","success":true,"type":"IPv4"}"#.data(using: .utf8)!
+        var sentKey: String?
         MockURLProtocol.requestHandler = { request in
-            #expect(request.value(forHTTPHeaderField: "X-Api-Key") == nil)
+            sentKey = request.value(forHTTPHeaderField: "X-Api-Key")
             let response = HTTPURLResponse(
                 url: request.url!, statusCode: 200,
                 httpVersion: nil, headerFields: nil)!
             return (response, json)
         }
         _ = try await makeClient().lookup("1.1.1.1")
+        XCTAssertNil(sentKey)
     }
 
     /// Hits the real free endpoint. Skipped unless IPDATA_LIVE is set.
-    @Test(.enabled(if: ProcessInfo.processInfo.environment["IPDATA_LIVE"] != nil))
-    func liveSmoke() async throws {
+    func testLiveSmoke() async throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["IPDATA_LIVE"] != nil,
+                          "set IPDATA_LIVE=1 to run the live smoke test")
         let client = IPDataClient()
         let info = try await client.lookup("8.8.8.8")
-        #expect(info.ip == "8.8.8.8")
-        #expect(info.success == true)
+        XCTAssertEqual(info.ip, "8.8.8.8")
+        XCTAssertEqual(info.success, true)
     }
 }

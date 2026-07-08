@@ -24,27 +24,7 @@ let package = Package(
         .testTarget(
             name: "IPDataTests",
             dependencies: ["IPData"],
-            path: "Tests/IPDataTests",
-            swiftSettings: [
-                // Command-Line-Tools-only macOS installs (no full Xcode) keep
-                // the Swift Testing framework outside the default search
-                // path, and lack the Testing+Foundation cross-import overlay
-                // module entirely. Both flags are no-ops (warning only) on
-                // any machine where the standard paths already resolve.
-                .unsafeFlags(
-                    ["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                     "-Xfrontend", "-disable-cross-import-overlays"],
-                    .when(platforms: [.macOS])
-                ),
-            ],
-            linkerSettings: [
-                .unsafeFlags(
-                    ["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
-                     "-Xlinker", "-rpath",
-                     "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"],
-                    .when(platforms: [.macOS])
-                ),
-            ]
+            path: "Tests/IPDataTests"
         ),
     ]
 )
