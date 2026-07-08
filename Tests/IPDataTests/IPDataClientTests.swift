@@ -42,11 +42,14 @@ struct IPDataClientTests {
             return (response, body)
         }
 
-        await #expect {
+        do {
             _ = try await makeClient().batch(["8.8.8.8"])
-        } throws: { error in
-            guard let apiError = error as? IPDataError else { return false }
-            return apiError.status == 403 && !apiError.message.isEmpty
+            Issue.record("expected IPDataError to be thrown")
+        } catch let apiError as IPDataError {
+            #expect(apiError.status == 403)
+            #expect(!apiError.message.isEmpty)
+        } catch {
+            Issue.record("unexpected error type: \(error)")
         }
     }
 
